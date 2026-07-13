@@ -114,6 +114,28 @@ Present the "this week" table and ask if the user wants anything adjusted before
 worklog tool — don't assume the first draft is final, since the time allocation always involves judgment calls
 specific to that week's actual constraints (which team is blocking them, what got approved, etc.).
 
+## Optional: automating this on a schedule
+
+This skill ships without a wired-up automatic trigger, for the reason stated above: local filesystem + browser
+session access, neither reachable from a cloud scheduler. If you want a *local* OS-level schedule (Windows Task
+Scheduler, cron, launchd) to run it unattended, three pitfalls came up building this for real and are worth
+knowing before you try:
+
+1. **Native console output encoding.** Some CLI runtimes (Claude Code's included) switch to UTF-16 output once
+   stdout is redirected/non-interactive. On Windows PowerShell 5.1, the default `$OutputEncoding` used to decode
+   a native command's output is single-byte (`us-ascii`), which mangles anything non-ASCII into garbage. Set
+   `$OutputEncoding = [System.Text.Encoding]::Unicode` before invoking the CLI, and capture output through the
+   pipeline (`$result = & claude.exe ... 2>&1`) rather than raw stream redirection (`*>>`), which bypasses
+   decoding entirely.
+2. **Unattended permission handling.** A headless run has no one to approve tool-use prompts, so it needs some
+   form of non-interactive permission — but reach for a scoped allowlist (`--allowedTools "Read Grep Agent ..."`)
+   rather than blanket-bypassing permission checks. This skill only needs to read files and browse chat to
+   produce a report; there's no reason an unattended run should be able to edit or execute arbitrary commands.
+3. **Browser-extension chat MCPs typically allow only one connected session.** If an interactive session already
+   holds the connection, a separate scheduled/headless process usually can't also attach to check chat. Don't
+   treat this as a fatal error — this skill is written to fall back to local-session-logs-only and say so plainly
+   in the output when this happens.
+
 ## Keeping your config out of git
 
 If you fork/clone this skill and fill in your own company URL, project names, etc., consider splitting those

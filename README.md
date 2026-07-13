@@ -1,16 +1,24 @@
 # weekly-worklog
 
-A [Claude Code skill](https://docs.claude.com/en/docs/claude-code) that compiles your weekly worklog entry —
-last week's completed work plus this week's plan, time-boxed to a full work week — by cross-referencing your
-local Claude Code session history with your team chat.
+Two [Claude Code skills](https://docs.claude.com/en/docs/claude-code) that compile your worklog entries by
+cross-referencing your local Claude Code session history with your team chat, so you're not reconstructing "what
+did I actually do" from memory every time a report is due.
+
+| Skill | Cadence | Output |
+|---|---|---|
+| [`weekly-worklog`](weekly-worklog/) | weekly | last week's completed work (summary) + this week's plan (task / deliverable / hours table, sums to a full work week) |
+| [`daily-worklog`](daily-worklog/) | daily | today's completed work only (task / hours table, sums to a full work day) — retrospective, no forward-looking plan |
+
+They share the same two data sources and the same setup placeholders — read `weekly-worklog/SKILL.md` first even
+if you only want the daily one, since `daily-worklog/SKILL.md` assumes you've seen it.
 
 ## Why
 
-Weekly status reports are annoying to write from memory. This skill reconstructs "what did I actually do last
-week" from your local Claude Code session logs (`~/.claude/projects/*.jsonl`), optionally cross-references your
-team chat for anything decided outside of a coding session, and produces a "this week" task table with hours
-that add up to a real work week — applying a few judgment calls about time-boxing that are easy to get wrong
-(e.g. not logging 5 days for a task that's just waiting on someone else's approval).
+Status reports are annoying to write from memory. These skills reconstruct "what did I actually do" from your
+local Claude Code session logs (`~/.claude/projects/*.jsonl`), optionally cross-reference your team chat for
+anything decided outside of a coding session, and produce a task table with hours that add up to a real work
+period — applying a few judgment calls about time-boxing that are easy to get wrong (e.g. not logging 5 days for
+a task that's just waiting on someone else's approval).
 
 ## Quickstart
 
@@ -19,15 +27,19 @@ that add up to a real work week — applying a few judgment calls about time-box
 ```sh
 git clone https://github.com/eunhyekim-bespinglobal/weekly-worklog-skill.git
 cp -r weekly-worklog-skill/weekly-worklog ~/.claude/skills/
+cp -r weekly-worklog-skill/daily-worklog ~/.claude/skills/    # optional, if you also want the daily version
 ```
 
 (On Windows, that's `~/.claude/skills` → `C:\Users\<you>\.claude\skills\`.) No build step, no dependencies to
-install — Claude Code auto-discovers anything under `~/.claude/skills/*/SKILL.md`.
+install — Claude Code auto-discovers anything under `~/.claude/skills/*/SKILL.md`. Copy either folder
+independently if you only want one of the two.
 
 **2. Fill in your config**
 
-This skill ships generic on purpose — it doesn't know your company's worklog tool, your chat platform, or which
-projects matter to you. Open `weekly-worklog/SKILL.md` and replace the placeholders under **Setup** at the top:
+These skills ship generic on purpose — they don't know your company's worklog tool, your chat platform, or which
+projects matter to you. Open `weekly-worklog/SKILL.md` and replace the placeholders under **Setup** at the top
+(if you're also installing `daily-worklog`, it reuses the same values — see its own SKILL.md for the one
+daily-specific setting, your hours-per-day target):
 
 | Placeholder | What to put there |
 |---|---|
@@ -77,9 +89,12 @@ Just ask, in plain language, in Claude Code:
 
 > compile my worklog for this week
 
-or in Korean: `이번주 워크로그 정리해줘`. The skill's description is written to trigger on phrasing like this, so
-you don't need to remember an exact command — see `weekly-worklog/SKILL.md`'s frontmatter for the full trigger
-conditions if it doesn't fire for you.
+or for the daily version:
+
+> what did I get done today?
+
+Each skill's description is written to trigger on phrasing like this, so you don't need to remember an exact
+command — see the relevant `SKILL.md`'s frontmatter for the full trigger conditions if it doesn't fire for you.
 
 ## First run — what to expect
 
@@ -107,13 +122,15 @@ If it comes back with barely anything for "last week," that usually means there 
 Code session activity in the date range — check that your date range is right, or that you were coding somewhere
 other than through Claude Code that week (this skill only sees what's in `~/.claude/projects`).
 
-## What it does *not* do
+## What these skills do *not* do
 
-- It does not automatically log into any chat tool or handle credentials.
-- It is not scheduled to run automatically — invoke it yourself (e.g. every Monday), since it depends on local
-  filesystem access and (for the chat step) an actively logged-in browser session.
-- It will not surface or summarize personal/casual chat content about you or your coworkers, even if it's in a
-  channel it's otherwise scanning for work context.
+- They do not automatically log into any chat tool or handle credentials.
+- Neither ships wired to an automatic trigger — invoke them yourself (e.g. every Monday / every evening), since
+  they depend on local filesystem access and (for the chat step) an actively logged-in browser session that a
+  cloud scheduler can't reach. Each `SKILL.md` has an "Optional: automating this on a schedule" section covering
+  the pitfalls if you want to wire up local OS-level scheduling anyway (Task Scheduler, cron, launchd).
+- They will not surface or summarize personal/casual chat content about you or your coworkers, even if it's in a
+  channel otherwise being scanned for work context.
 
 ## License
 
