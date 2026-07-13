@@ -1,24 +1,26 @@
 # weekly-worklog
 
 Two [Claude Code skills](https://docs.claude.com/en/docs/claude-code) that compile your worklog entries by
-cross-referencing your local Claude Code session history with your team chat, so you're not reconstructing "what
-did I actually do" from memory every time a report is due.
+cross-referencing your local Claude Code session history, your team chat, and your Chrome browsing history, so
+you're not reconstructing "what did I actually do" from memory every time a report is due.
 
 | Skill | Cadence | Output |
 |---|---|---|
 | [`weekly-worklog`](weekly-worklog/) | weekly | last week's completed work (summary) + this week's plan (task / deliverable / hours table, sums to a full work week) |
 | [`daily-worklog`](daily-worklog/) | daily | today's completed work only (task / hours table, sums to a full work day) — retrospective, no forward-looking plan |
 
-They share the same two data sources and the same setup placeholders — read `weekly-worklog/SKILL.md` first even
-if you only want the daily one, since `daily-worklog/SKILL.md` assumes you've seen it.
+They share the same three data sources (including a bundled `read-chrome-history.py` script — no extra MCP setup
+needed for that one, just Python) and the same setup placeholders — read `weekly-worklog/SKILL.md` first even if
+you only want the daily one, since `daily-worklog/SKILL.md` assumes you've seen it.
 
 ## Why
 
 Status reports are annoying to write from memory. These skills reconstruct "what did I actually do" from your
-local Claude Code session logs (`~/.claude/projects/*.jsonl`), optionally cross-reference your team chat for
-anything decided outside of a coding session, and produce a task table with hours that add up to a real work
-period — applying a few judgment calls about time-boxing that are easy to get wrong (e.g. not logging 5 days for
-a task that's just waiting on someone else's approval).
+local Claude Code session logs (`~/.claude/projects/*.jsonl`), your Chrome browsing history (cloud console
+clicks, doc edits, internal tools — things that never touch Claude Code or chat at all), and optionally your team
+chat for anything decided outside of a coding session — then produce a task table with hours that add up to a
+real work period, applying a few judgment calls about time-boxing that are easy to get wrong (e.g. not logging 5
+days for a task that's just waiting on someone else's approval).
 
 ## Quickstart
 
@@ -80,8 +82,12 @@ your job specifically, not like a template with blanks left in it.
 Step 2 of the skill cross-references your team chat, but it needs an MCP tool that can actually read it —
 a browser MCP with an already-logged-in session (e.g. `claude-in-chrome`) for browser-based chat, or a
 dedicated Slack/Teams MCP connector. If you don't have one set up, don't worry about it: skip this, and the
-skill still works fine off your local session logs alone — you'll just be missing anything that only happened
-in chat (approvals, other people's asks of you, meeting outcomes).
+skill still works fine off your local session logs and browser history alone — you'll just be missing anything
+that only happened in chat (approvals, other people's asks of you, meeting outcomes).
+
+The browser-history step (Step 2.5 in each `SKILL.md`) needs no separate setup beyond Python 3 with its stdlib
+`sqlite3` module (already true for any normal Python install) — the bundled `read-chrome-history.py` reads
+Chrome's local history file directly, no MCP or login required.
 
 **4. Run it**
 
@@ -104,9 +110,11 @@ Nothing runs silently. On a typical first run:
    that off to a background agent so it isn't blocking.
 2. If you have a chat MCP connected, Claude opens it in parallel and tells you which channels/spaces it's
    checking (and which it's skipping as irrelevant or personal).
-3. You get a **"last week" summary** grouped by project — plain bullet points, not a table, since this part is
+3. Claude runs `read-chrome-history.py` for the same date range and reads back the (auth-token-stripped) result —
+   again telling you what it's doing, not doing it silently.
+4. You get a **"last week" summary** grouped by project — plain bullet points, not a table, since this part is
    informational.
-4. You get a **"this week" table** in the exact column format from your config, with hours summing to a full
+5. You get a **"this week" table** in the exact column format from your config, with hours summing to a full
    work week, e.g.:
 
    | 업무내용 | 관련산출물 | 시간 |
@@ -114,7 +122,7 @@ Nothing runs silently. On a typical first run:
    | Follow up on the pending access request (5-business-day lead time per IT) | Approval confirmation | 4h |
    | ... | ... | ... |
 
-5. Claude asks if you want anything adjusted before you paste it into your actual worklog tool — the first draft
+6. Claude asks if you want anything adjusted before you paste it into your actual worklog tool — the first draft
    is a starting point, not gospel. Tell it what's wrong (wrong scope, missing task, hours off) and it'll redo
    that table on the spot.
 
@@ -131,6 +139,10 @@ other than through Claude Code that week (this skill only sees what's in `~/.cla
   the pitfalls if you want to wire up local OS-level scheduling anyway (Task Scheduler, cron, launchd).
 - They will not surface or summarize personal/casual chat content about you or your coworkers, even if it's in a
   channel otherwise being scanned for work context.
+- `read-chrome-history.py` strips OAuth/SSO/session-token-looking URLs mechanically, at the script level, before
+  that text ever reaches the model — not as a "please don't repeat this" instruction the model could still get
+  wrong. Personal (non-work) browsing is a separate, judgment-based filter applied when the model compiles the
+  report, same as personal chat.
 
 ## License
 

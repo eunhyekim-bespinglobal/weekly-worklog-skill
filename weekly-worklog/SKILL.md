@@ -1,16 +1,15 @@
 ---
 name: weekly-worklog
-description: "Compile a weekly worklog entry (last week's completed work + this week's plan, time-boxed to a full work week, as a task/deliverable/hours table) by cross-referencing local Claude Code session logs and your team chat. Trigger this whenever the user mentions 'worklog', 'weekly report', asks what they did last week / should do this week, or it's the start of the week and they're preparing a status update. Always use this instead of starting from scratch — it encodes judgment calls about how to scope and time-box tasks that are easy to get wrong (padding blocked tasks, logging hours for work that can't start yet, etc)."
+description: "Compile a weekly worklog entry (last week's completed work + this week's plan, time-boxed to a full work week, as a task/deliverable/hours table) by cross-referencing local Claude Code session logs, your team chat, and (via the bundled read-chrome-history.py) Chrome browsing history. Trigger this whenever the user mentions 'worklog', 'weekly report', asks what they did last week / should do this week, or it's the start of the week and they're preparing a status update. Always use this instead of starting from scratch — it encodes judgment calls about how to scope and time-box tasks that are easy to get wrong (padding blocked tasks, logging hours for work that can't start yet, etc)."
 ---
 
 # Weekly worklog compiler
 
 Many teams require a weekly status log — what got done, what's planned, broken into tasks with time estimates
-that should add up to a full work week. This skill reconstructs that from two sources you don't manually track
-in real time: your local Claude Code session history, and your team chat tool. It's meant to be invoked manually
-(e.g. every Monday) — it is **not** wired to an automatic schedule, because it depends on this machine's local
-filesystem and (if you enable the chat step) an actively logged-in browser session, neither of which a cloud/
-scheduled run can guarantee.
+that should add up to a full work week. This skill reconstructs that from three sources you don't manually track
+in real time: your local Claude Code session history, your team chat tool, and your Chrome browsing history. It
+can be invoked manually (e.g. every Monday) or wired to a local scheduled task — see "Optional: automating this
+on a schedule" near the bottom, including several hard-won pitfalls if you try.
 
 ## Setup — fill these in before first use
 
@@ -27,13 +26,15 @@ config out of git" at the bottom):
   chat channels and repos are actually relevant to your work vs. noise.
 - Your name / handle, so the skill can search chat for messages directed at you.
 
-## Why two sources
+## Why three sources
 
-Neither source alone is enough. Local Claude Code sessions capture the *technical* work (debugging, code changes,
+No single source is enough. Local Claude Code sessions capture the *technical* work (debugging, code changes,
 investigations) across your repos, but miss anything decided or requested over chat (meeting outcomes, approvals,
-blockers, other people's asks of you). Chat captures the organizational context but not the technical substance.
-Combine both — but treat chat as optional if you don't use `claude-in-chrome` or an equivalent; the skill is still
-useful with just the local session logs.
+blockers, other people's asks of you) or done outside Claude Code entirely (cloud console clicks, doc/sheet edits,
+internal tools). Chat captures the organizational context but not the technical substance or web-tool usage.
+Browser history fills a lot of that last gap. Combine whichever are available — treat chat and browser history as
+optional if you don't have `claude-in-chrome` (or an equivalent) connected; the skill is still useful with just
+the local session logs.
 
 ## Step 1 — Local session logs
 
@@ -83,9 +84,50 @@ Go through the channel/DM list and use judgment about what's actually work-relev
   tool supports it — much faster), noting: work completed, action items directed at the user (search for their
   name/handle), and blockers.
 
+## Step 2.5 — Browser history (optional)
+
+Local session logs and chat both miss a lot of real work done in a browser: cloud console clicks, doc/sheet
+edits, internal tools, one-off research. `chrome://history` itself is unreadable through most browser-automation
+MCP tools (Chrome blocks extensions from scripting any `chrome://` page, regardless of how you navigate there —
+don't waste time retrying that path). It's readable a different way: the history is a local SQLite file on disk.
+
+Use the bundled `read-chrome-history.py` (next to this file) rather than writing ad hoc queries. It does the
+file-locking-safe copy (Chrome locks the file while running), the query, and — importantly — mechanically strips
+anything that looks like an OAuth/SSO/session token (auth-provider hosts, `code=`/`token=`/`state=`/etc. query
+params, long or launcher-style query strings) *before that text ever reaches you*. That's deliberate: a script
+that never writes a secret into its output can't leak it by mistake, whereas an LLM asked nicely not to repeat
+one still can. It's also why headless/scheduled runs can safely use this specific script even though their
+permission scope otherwise blocks general Bash/Python — see the automation section below.
+
+Run it like this:
+
+```
+python ~/.claude/read-chrome-history.py --days <N> --out <path>
+```
+
+`--days N` should cover from the start of the range you're reconstructing through today, inclusive — e.g. for
+"since Monday" on a Wednesday, that's `--days 3`. Read the output file, not the console (see the encoding pitfall
+in the automation section — the same class of bug applies to any tool's output, not just Claude's). Once you're
+done with it, clean up the same way you created it:
+
+```
+python ~/.claude/read-chrome-history.py --delete <the-same-path>
+```
+
+(`--delete` only removes files whose basename starts with `history_`, so it can't become a general-purpose
+delete primitive even from a malformed argument.)
+
+What's left in the output is de-duplicated and auth-noise-free but **not** filtered for personal-vs-work — apply
+the same hard boundary as personal chat in Step 2 (never surface it, even in passing), and group by topic rather
+than individual URL (a dozen visits to the same doc over an hour is one line of work, not twelve).
+
+`find_active_history_file()` in the script looks in the standard Chrome profile locations for Windows, macOS, and
+Linux and picks whichever profile was modified most recently — adjust it if your setup is unusual (e.g. a
+non-default profile directory, or Chromium/Brave/Edge instead of Chrome).
+
 ## Step 3 — Compile
 
-Once your source(s) are in, produce two things:
+Once whichever of your sources were available are in, produce two things:
 
 **Last week's completed work** — grouped by project, concrete bullet points combining both sources. This is
 informational, not time-boxed.
@@ -118,23 +160,52 @@ specific to that week's actual constraints (which team is blocking them, what go
 
 This skill ships without a wired-up automatic trigger, for the reason stated above: local filesystem + browser
 session access, neither reachable from a cloud scheduler. If you want a *local* OS-level schedule (Windows Task
-Scheduler, cron, launchd) to run it unattended, three pitfalls came up building this for real and are worth
-knowing before you try:
+Scheduler, cron, launchd) to run it unattended, several pitfalls came up building and validating this for real —
+against the *actual* scheduler, not just by running the wrapper script interactively, which hid two of these —
+and are worth knowing before you try:
 
-1. **Native console output encoding.** Some CLI runtimes (Claude Code's included) switch to UTF-16 output once
-   stdout is redirected/non-interactive. On Windows PowerShell 5.1, the default `$OutputEncoding` used to decode
-   a native command's output is single-byte (`us-ascii`), which mangles anything non-ASCII into garbage. Set
-   `$OutputEncoding = [System.Text.Encoding]::Unicode` before invoking the CLI, and capture output through the
-   pipeline (`$result = & claude.exe ... 2>&1`) rather than raw stream redirection (`*>>`), which bypasses
-   decoding entirely.
-2. **Unattended permission handling.** A headless run has no one to approve tool-use prompts, so it needs some
+1. **Native console output encoding is unreliable across contexts.** A CLI's effective stdout encoding can differ
+   depending on whether a console is attached — tuning PowerShell's `$OutputEncoding` and capturing output through
+   its native-command pipeline (`$result = & claude.exe ... 2>&1`) can work when you test the wrapper script from
+   an interactive shell, then produce mojibake on the *actual* scheduled run, because Task Scheduler launches with
+   no console attached and the effective encoding differs. Don't route through PowerShell's native-command string
+   pipeline at all: use `Start-Process` with real OS-level file redirection (`-RedirectStandardOutput`/
+   `-RedirectStandardError`, raw bytes, no PowerShell decoding at capture time), then explicitly read the result
+   back with a fixed encoding (`Get-Content -Raw -Encoding UTF8`) — modern CLIs generally write UTF-8 to a
+   redirected/piped stream regardless of console state, so decoding it yourself removes the ambiguity entirely.
+2. **`Start-Process -ArgumentList` doesn't reliably quote array elements containing spaces** (confirmed on Windows
+   PowerShell 5.1). A multi-word prompt passed as one array element can get silently re-split, and text inside it
+   that happens to look like a flag (e.g. an example command containing `--out <path>`) gets parsed by the target
+   program as a real argument it doesn't recognize. Build one properly-escaped Windows command-line string
+   yourself (standard MSVCRT argv-quoting: wrap in quotes, double backslashes before a literal quote or at the
+   end of the string) and pass that single string to `-ArgumentList` instead of an array.
+3. **Set an explicit working directory.** A process launched by Task Scheduler (or by `Start-Process` generally,
+   if you don't specify one) can default to somewhere like `C:\Windows\System32` rather than your user profile —
+   pass `-WorkingDirectory` explicitly, or a tool that resolves relative paths may end up rooted somewhere your
+   home-directory files aren't reachable from.
+4. **A one-shot headless invocation (`claude -p "..."`) can't receive an async background-task notification.** If
+   Step 1's instruction to spawn a background summarizing Agent runs as-is in headless mode, the process has no
+   "later" in which to receive that agent's completion and finish the report — it just silently gives up on that
+   source. For a headless/scheduled run specifically, instruct the model to read files directly/synchronously
+   (Grep/Read) instead of delegating to a background Agent, even though that's slower — reliability over
+   parallelism when there's no ongoing session to deliver an async result into.
+5. **Unattended permission handling.** A headless run has no one to approve tool-use prompts, so it needs some
    form of non-interactive permission — but reach for a scoped allowlist (`--allowedTools "Read Grep Agent ..."`)
-   rather than blanket-bypassing permission checks. This skill only needs to read files and browse chat to
-   produce a report; there's no reason an unattended run should be able to edit or execute arbitrary commands.
-3. **Browser-extension chat MCPs typically allow only one connected session.** If an interactive session already
+   rather than blanket-bypassing permission checks. If you bundle a script for a sensitive step (like browser
+   history above), pin the allowlist to that script's *exact* invocation form, not a loose pattern: the Bash tool
+   commonly runs through something like Git Bash on Windows, which uses POSIX-style paths (`/c/Users/...`), not
+   Windows backslash paths, so an allowlist pattern built from a Windows-style path silently never matches and
+   the call just hangs waiting for an approval that never comes. Put the literal, pre-computed command directly in
+   the prompt — including a concrete output file path, not a placeholder like `<path>` for the model to fill in,
+   which invites it to invent a filename that doesn't match your allowlist pattern or your cleanup script's
+   expected naming.
+6. **Browser-extension chat MCPs typically allow only one connected session.** If an interactive session already
    holds the connection, a separate scheduled/headless process usually can't also attach to check chat. Don't
-   treat this as a fatal error — this skill is written to fall back to local-session-logs-only and say so plainly
-   in the output when this happens.
+   treat this as a fatal error — this skill is written to fall back to local-session-logs + browser history and
+   say so plainly in the output when this happens.
+
+Validate any of this against the *real* scheduled task (e.g. `Start-ScheduledTask` on Windows), not just by
+running the wrapper script yourself in an interactive terminal — several of the above only surfaced that way.
 
 ## Keeping your config out of git
 
