@@ -40,6 +40,29 @@ projects matter to you. Open `weekly-worklog/SKILL.md` and replace the placehold
 company-confidential.** If you version-control your own `~/.claude/skills`, keep your personal values in a
 separate `config.md` you `.gitignore`, per the note at the bottom of `SKILL.md`.
 
+**Example: what a filled-in Setup looks like**
+
+Placeholders can feel abstract until you see one filled in. Here's a fictional (not a real company) example —
+say you're on the platform team at "Acme," tracking work in an internal tool, chatting in Slack:
+
+| Placeholder | Example filled-in value |
+|---|---|
+| `<YOUR_WORKLOG_URL>` | `https://worklog.acme-internal.com/weekly?team=platform` |
+| `<YOUR_WORKLOG_FORMAT>` | 3 columns — Task / Output / Hours — summing to 40h/week |
+| `<YOUR_CHAT_TOOL>` | Slack, via the `slack` MCP connector |
+| `<YOUR_PRIMARY_WORK_CONTEXT>` | "Platform team; repos are `payments-service` and `checkout-web`; primary Slack channel is `#platform-eng`" |
+| Name/handle to search chat for | `Jamie Lee` / `@jamie` |
+
+With those in place, the opening paragraph of `SKILL.md` ends up reading something like:
+
+> Every Monday I log a weekly entry at `https://worklog.acme-internal.com/weekly?team=platform`. This skill
+> reconstructs what I did last week and what I need to do this week from my local Claude Code session history
+> and Slack.
+
+You don't have to rewrite prose sentence-by-sentence — swapping each bracketed placeholder for your own value
+throughout the file is enough. The goal is that by the time you're done, the skill reads like it was written for
+your job specifically, not like a template with blanks left in it.
+
 **3. (Optional) connect a chat tool**
 
 Step 2 of the skill cross-references your team chat, but it needs an MCP tool that can actually read it —
